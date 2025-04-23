@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+        <meta name="viewport" content="initial-scale=1, maximum-scale=1.0, minimum-scale=1.0, width=device-width, minimal-ui">
+        <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.5/dist/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-SgOJa3DmI69IUzQ2PVdRZhwQ+dy64/BUtbMJw1MZ8t5HZApcHrRKUc4W0kG879m7" crossorigin="anonymous">
+        <title>GTM Template validator</title>
+        <style>
+          .vh-50 {
+            height: 50vh;
+          }
+        </style>
+    </head>
+    <body>
+        <div class="text-center">
+          <h1>Google Tag Manager template validator</h1>
+        </div>
+        <div class="container">
+          <div class="row">
+            <div class="col-6">
+              <form id="code-form" method="post">
+                <div class="mb-3">
+                  <label for="template-code" class="form-label">Template code (tpl)</label>
+                  <textarea id="template-code" class="form-control vh-50" placeholder="___TERMS_OF_SERVICE___ ...."></textarea>
+                </div>
+                <div>
+                  <button class="btn btn-primary">Validate</button>
+                </div>
+              </form>
+              <h2>Output:</h2>
+              <ul id="errors-container" class="list-group"></ul>
+            </div>
+            <div class="col-6">
+              <form id="metadata-form" method="post">
+                <div class="mb-3">
+                  <label for="template-metadata" class="form-label">Metadata.yaml</label>
+                  <textarea id="template-metadata" class="form-control vh-50" placeholder="  # Latest version
+  - sha: 62ac746168b5aa2d213ed0b42d75128b03f49764
+    changeNotes: v6.2
+      Rollback changes to see if google updates the template again..."></textarea>
+                </div>
+                <div>
+                  <button class="btn btn-primary">Validate</button>
+                </div>
+              </form>
+              <h2>Output:</h2>
+              <ul id="errors-metadata-container" class="list-group"></ul>
+            </div>
+          </div>
+        </div>
+        <script>
+            class TemplateValidator {
+
+              constructor() {
+                this.CODE_BLOCK = "___SANDBOXED_JS_FOR_WEB_TEMPLATE___";
+                this.PERMISSIONS_BLOCK = "___WEB_PERMISSIONS___";
+                this.NOTES_BLOCK = "___NOTES___";
+                this.INFO_BLOCK = "___INFO___";
+                this.PARAMETERS_BLOCK = "___TEMPLATE_PARAMETERS___";
+                this.promises = {};
+                this.recoverCode();
+                this.setupListeners();
+              }
+
+              recoverCode() {
+                const code = localStorage.getItem("code");
+                if (!code) {
+                  return;
+                }
+                document.querySelector('#code-form textarea').value = code;
+              }
+
+              setupListeners() {
+                document.getElementById('code-form').addEventListener('submit', (e) => {
+                  e.preventDefault();
+                  this.formId = 'code-form';
+                  const code = document.querySelector('#code-form textarea').value;
+                  localStorage.setItem("code", code);
+                  this.validateTemplate(code);
+                });
+                document.getElementById('metadata-form').addEventListener('submit', (e) => {
+                  e.preventDefault();
+                  this.formId = 'metadata-form';
+                  const code = document.querySelector('#metadata-form textarea').value;
+                  this.validateMetadata(code);
+                });
+              }
+
+              validateMetadata(str) {
+                this.clearErrors();
+                let obj;
+                try {
+                  obj = YAML.parse(str);
+                } catch(e) {
+                  this.logError(e.message + ". Check it on https://www.yamllint.com/");
+                  return;
+                }
+
+                if (!obj) {
+                  this.logError("Empty YAML received");
+                  return;
+                }
+
+                const conclusion = this.validateObject(obj, [
+                  { name: "homepage", required: true, type: "string" },
+                  { name: "documentation", required: true, type: "string" },
+                  {
+                    name: "versions", required: true, type: "array",
+                    child_schema: [
+                      { name: "sha", required: true, type: "string" },
+                      { name: "changeNotes", required: true, type: "string" }
+                    ]
+                  }
+                ]);
+
+                if (conclusion.valid) {
+                  this.logError(`Is valid`);
+                  return;
+                }
+                this.logError(conclusion.error + ". Check it on https://www.yamllint.com/");
+              }
+
+              validateObject(obj, schema) {
+                const validateField = (value, fieldSchema) => {
+                  if (fieldSchema.required && value === undefined) {
+                    return `${fieldSchema.name} is required.`;
+                  }
+                  if (value !== undefined) {
+                    switch (fieldSchema.type) {
+                      case 'string':
+                        if (typeof value !== 'string') return `${fieldSchema.name} must be a string.`;
+                        break;
+                      case 'int':
+                        if (!Number.isInteger(value)) return `${fieldSchema.name} must be an integer.`;
+                        break;
+                      case 'boolean':
+                      case 'bool':
+                        if (typeof value !== 'boolean') return `${fieldSchema.name} must be a boolean.`;
+                        break;
+                      case 'simple_array':
+                        if (!Array.isArray(value)) return `${fieldSchema.name} must be an array.`;
+                        for (let item of value) {
+                          const error = validateField(item, fieldSchema.child_schema);
+                          if (error) return error;
+                        }
+                        break;
+                      case 'array':
+                        if (!Array.isArray(value)) return `${fieldSchema.name} must be an array.`;
+                        for (let item of value) {
+                          for (let childField of fieldSchema.child_schema) {
+                            const error = validateField(item[childField.name], childField);
+                            if (error) return error;
+                          }
+                        }
+                        break;
+                      case 'object':
+                        const conclusion = this.validateObject(value, fieldSchema.child_schema);
+                        if (!conclusion.valid) return conclusion.error;
+                        break;
+                      default:
+                        return `Unknown type for ${fieldSchema.name}.`;
+                    }
+                  }
+                  return null;
+                }
+
+                for (let field of schema) {
+                  const error = validateField(obj[field.name], field);
+                  if (error) return { valid: false, error, obj, field };
+                }
+
+                return { valid: true };
+              }
+
+              clearErrors() {
+                this.errors = [];
+              }
+
+              async validateTemplate(template) {
+                this.clearErrors();
+                const expectedSeparators = [
+                  "___TERMS_OF_SERVICE___",
+                  this.INFO_BLOCK,
+                  this.PARAMETERS_BLOCK,
+                  this.CODE_BLOCK,
+                  this.PERMISSIONS_BLOCK,
+                  "___TESTS___",
+                  this.NOTES_BLOCK,
+                ];
+
+                this.blocks = {};
+                for(const blockType of expectedSeparators) {
+                  const pos = template.indexOf(blockType);
+
+                  if (pos === -1) {
+                    this.logError("Missing " + blockType);
+                    continue;
+                  }
+                  let block = template.substr(pos, template.length);
+                  block = block.replace(blockType, "");
+                  block = block.substr(0, block.indexOf("___")).trim();
+
+                  if (block || blockType === this.NOTES_BLOCK) {
+                    this.blocks[blockType] = block;
+                  } else {
+                    this.logError(`Block ${blockType} is empty`);
+                  }
+                }
+
+                const codeValidation = this.validateCode(this.blocks[this.CODE_BLOCK]);
+                this.validatePermissions(this.blocks[this.PERMISSIONS_BLOCK], codeValidation.permsToCheck);
+                this.validateInfo(this.blocks[this.INFO_BLOCK]);
+                this.validateParameters(this.blocks[this.PARAMETERS_BLOCK]);
+
+                this.logError(`Validation finished`);
+              }
+
+              validatePermissions(block, permsToCheck) {
+                const json = JSON.parse(block);
+
+                if (!json) {
+                  this.logError(`${type} must be a valid JSON`);
+                  return false;
+                }
+
+                for(const permId of permsToCheck) {
+                  const permRequested = json.find(p => p.instance.key.publicId === permId);
+
+                  if (!permRequested) {
+                    this.logError(`${this.PERMISSIONS_BLOCK}: Permission ${permId} is being used but not requested`);
+                  }
+                }
+              }
+
+              validateCode(block) {
+                  const requireRegex = /require\(["']([^"']+)["']\)/g;
+
+                  let matches = [...block.matchAll(requireRegex)].map(match => match[1]);
+                  matches = matches.filter((value, index, array) => {
+                    return array.indexOf(value) === index;
+                  });
+
+                  // check if it has set the permissions to require them
+                  const requiredPerms = {
+                    addConsentListener: "access_consent",
+                    isConsentGranted: "access_consent",
+                    addEventCallback: "read_event_metadata",
+                    aliasInWindow: "access_globals",
+                    callInWindow: "access_globals",
+                    copyFromDataLayer: "read_data_layer",
+                    copyFromWindow: "access_globals",
+                    createArgumentsQueue: "access_globals",
+                    createQueue: "access_globals",
+                    getContainerVersion: "read_container_data",
+                    getCookieValues: "get_cookies",
+                    getQueryParameters: "get_url",
+                    getReferrerQueryParameters: "get_referrer",
+                    getReferrerUrl: "get_referrer",
+                    getUrl: "get_url",
+                    gtagSet: "write_data_layer",
+                    injectHiddenIframe: "inject_hidden_iframe",
+                    injectScript: "inject_script",
+                    localStorage: "access_local_storage",
+                    logToConsole: "logging",
+                    readCharacterSet: "read_character_set",
+                    readTitle: "read_title",
+                    sendPixel: "send_pixel",
+                    setCookie: "set_cookies",
+                    setDefaultConsentState: "access_consent",
+                    setInWindow: "access_globals",
+                    templateStorage: "access_template_storage",
+                    updateConsentState: "access_consent",
+                  };
+
+                  const permsToCheck = [];
+                  for(const requiredMethod of matches) {
+                    if (!requiredPerms[requiredMethod]) {
+                      continue;
+                    }
+                    permsToCheck.push(requiredPerms[requiredMethod]);
+                  }
+
+                  return {
+                    permsToCheck,
+                  };
+              }
+
+              validateInfo(block) {
+                const json = JSON.parse(block);
+
+                if (!json) {
+                  this.logError(`${this.INFO_BLOCK} must be a valid JSON`);
+                  return;
+                }
+
+                const conclusion = this.validateObject(json, [
+                  { name: "type", required: true, type: "string" },
+                  { name: "id", required: true, type: "string" },
+                  { name: "version", required: true, type: "int" },
+                  { name: "securityGroups", required: true, type: "simple_array", child_schema: { type: "string" } },
+                  { name: "displayName", required: true, type: "string" },
+                  {
+                    name: "categories", required: true, type: "simple_array",
+                    child_schema: { type: "string" }
+                  },
+                  {
+                    name: "brand", required: true, type: "object",
+                    child_schema: [
+                      { name: "id", required: true, type: "string" },
+                      { name: "displayName", required: true, type: "string" },
+                      { name: "thumbnail", required: true, type: "string" }
+                    ]
+                  },
+                  { name: "description", required: true, type: "string" },
+                  {
+                    name: "containerContexts", required: true, type: "simple_array",
+                    child_schema: { type: "string" }
+                  }
+                ]);
+
+                if (!conclusion.valid) {
+                  this.logError(`${this.INFO_BLOCK}: ${conclusion.error}`);
+                }
+              }
+
+              validateParameters(block) {
+                const json = JSON.parse(block);
+
+                if (!json) {
+                  this.logError(`${this.PARAMETERS_BLOCK} must be a valid JSON`);
+                  return;
+                }
+
+                const conclusion = this.validateObject(json, [
+                  { name: "type", required: true, type: "string" },
+                  { name: "name", required: true, type: "string" },
+                  { name: "displayName", required: true, type: "string" },
+                  { name: "groupStyle", required: true, type: "string" },
+                  {
+                    name: "subParams", required: true, type: "array",
+                    child_schema: [
+                      { name: "type", required: true, type: "string" },
+                      { name: "name", required: true, type: "string" },
+                      { name: "displayName", required: true, type: "string" },
+                      { name: "simpleValueType", required: true, type: "boolean" },
+                      { name: "alwaysInSummary", required: true, type: "boolean" },
+                      { name: "defaultValue", required: false, type: "string" },
+                      { name: "help", required: false, type: "string" },
+                      {
+                        name: "selectItems", required: false, type: "array",
+                        child_schema: [
+                          { name: "value", required: true, type: "string" },
+                          { name: "displayValue", required: true, type: "string" }
+                        ]
+                      },
+                      {
+                        name: "subParams", required: false, type: "array",
+                        child_schema: [
+                          { name: "type", required: true, type: "string" },
+                          { name: "name", required: true, type: "string" },
+                          { name: "displayName", required: true, type: "string" },
+                          { name: "simpleValueType", required: true, type: "boolean" },
+                          { name: "notSetText", required: false, type: "string" },
+                          {
+                            name: "enablingConditions", required: false, type: "array",
+                            child_schema: [
+                              { name: "paramName", required: true, type: "string" },
+                              { name: "paramValue", required: true, type: "string" },
+                              { name: "type", required: true, type: "string" }
+                            ]
+                          }
+                        ]
+                      }
+                    ]
+                  }
+                ]);
+
+                if (!conclusion.valid) {
+                  //this.logError(`${this.PARAMETERS_BLOCK}: ${conclusion.error} - ${JSON.stringify(conclusion.obj)}`);
+                }
+              }
+
+              logError(message) {
+                this.errors.push(message);
+                this.showErrors();
+              }
+
+              showErrors() {
+                const container = document.getElementById(this.formId).parentElement.querySelector('.list-group');
+                container.innerHTML = "";
+
+                for(const error of this.errors) {
+                  const tmp = document.createElement('ul');
+                  tmp.innerHTML = `<li class="list-group-item">${error}</li>`;
+                  container.append(tmp.querySelector('li'));
+                }
+              }
+            }
+            const validator = new TemplateValidator();
+        </script>
+        <script src="https://cdn.jsdelivr.net/npm/yamljs@0.3.0/dist/yaml.min.js"></script>
+    </body>
+</html>
+
