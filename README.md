@@ -1,4 +1,5 @@
 # GTM Template validator
+
 Sometimes, after publishing an update to your GTM tag template, it may not appear in the Community Template Gallery, or your entire template may have disappeared from the listing.
 
 Template updates are automatic, which means these problems stem from errors in the template itself.
@@ -11,4 +12,41 @@ Identifying the issue is not easy, as Google does not indicate what the problem 
 
 Importing your own tag into GTM helps detect basic errors, but not more complex ones. For example, if you fail to list the permissions your tag uses, Google automatically adds them when you import it, preventing you from identifying that type of error.
 
-Although incomplete, this validator should give you a hint about where the problem lies. You can use it at: https://mjadsmurai.github.io/gtm-template-validator/
+You can use it at: https://mjadsmurai.github.io/gtm-template-validator/
+
+## What is validated
+
+- Block structure and JSON syntax.
+- `___INFO___` required fields.
+- `___TEMPLATE_PARAMETERS___` JSON shape.
+- Permission **types** required by `require(...)` calls.
+- Permission **resources** used by the sandbox code:
+  - `access_globals` keys and their `read` / `write` / `execute` flags.
+  - `get_cookies` and `set_cookies` cookie names.
+  - `inject_script` and `inject_hidden_iframe` URLs (exact or URL-prefix match).
+  - `send_pixel` allowed URLs.
+  - `access_local_storage` keys and flags.
+  - `get_url` / `get_referrer` URL parts and query parameters.
+- Unused permission resources are reported as warnings.
+
+The static analyser resolves literals, `const` constants (including function-scoped ones) and simple wrapper functions, so calls like `injectProviderSDK(url)` or `setOrGetMicrosoftCookie('_uetuid', ...)` are checked too. Values that cannot be resolved statically produce a warning instead of a false error.
+
+## Development
+
+There are no runtime dependencies. Tests use the Node.js built-in test runner:
+
+```bash
+npm test
+```
+
+Layout:
+
+```
+index.html                  browser UI
+src/gtm-value.js            GTM permission value codec
+src/permissions-schema.js   sandbox API -> permission map
+src/static-analysis.js      code scanning and constant resolution
+src/validator.js            validation orchestration
+test/validator.test.js      test suite
+test/fixtures/official.tpl  reference template
+```
