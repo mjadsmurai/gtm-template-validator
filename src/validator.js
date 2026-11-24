@@ -86,6 +86,9 @@ export function validateTemplate(template) {
   if (blocks[BLOCKS.CODE]) {
     const analysis = analyzeCode(blocks[BLOCKS.CODE].content, blocks[BLOCKS.CODE].startLine);
     requirements = analysis.requirements;
+    for (const warning of analysis.warnings) {
+      warnings.push(issue(BLOCKS.CODE, warning.message, warning.line, { api: warning.api }));
+    }
   }
 
   if (blocks[BLOCKS.PERMISSIONS]) {

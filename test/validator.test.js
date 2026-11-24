@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { validateTemplate } from '../src/validator.js';
 import { encodePermission } from '../src/gtm-value.js';
+import { API_PERMISSIONS, APIS_WITHOUT_PERMISSION } from '../src/permissions-schema.js';
 
 const INFO = {
   type: 'TAG',
@@ -223,4 +224,120 @@ test('resolves function-scoped constants independently', () => {
   }));
 
   assert.equal(result.errors.length, 0, errorText(result));
+});
+
+const DOCUMENTED_PERMISSION_APIS = {
+  addConsentListener: 'access_consent',
+  addEventCallback: 'read_event_metadata',
+  aliasInWindow: 'access_globals',
+  callInWindow: 'access_globals',
+  copyFromDataLayer: 'read_data_layer',
+  copyFromWindow: 'access_globals',
+  createArgumentsQueue: 'access_globals',
+  createQueue: 'access_globals',
+  getContainerVersion: 'read_container_data',
+  getCookieValues: 'get_cookies',
+  getQueryParameters: 'get_url',
+  getReferrerQueryParameters: 'get_referrer',
+  getReferrerUrl: 'get_referrer',
+  getUrl: 'get_url',
+  gtagSet: 'write_data_layer',
+  injectHiddenIframe: 'inject_hidden_iframe',
+  injectScript: 'inject_script',
+  isConsentGranted: 'access_consent',
+  localStorage: 'access_local_storage',
+  logToConsole: 'logging',
+  readAnalyticsStorage: 'read_analytics_storage',
+  readCharacterSet: 'read_character_set',
+  readTitle: 'read_title',
+  sendPixel: 'send_pixel',
+  setCookie: 'set_cookies',
+  setDefaultConsentState: 'access_consent',
+  setInWindow: 'access_globals',
+  templateStorage: 'access_template_storage',
+  updateConsentState: 'access_consent',
+};
+
+const DOCUMENTED_NO_PERMISSION_APIS = [
+  'callLater',
+  'decodeUri',
+  'decodeUriComponent',
+  'encodeUri',
+  'encodeUriComponent',
+  'fromBase64',
+  'generateRandom',
+  'getTimestamp',
+  'getTimestampMillis',
+  'getType',
+  'JSON',
+  'makeInteger',
+  'makeNumber',
+  'makeString',
+  'makeTableMap',
+  'Math',
+  'Object',
+  'parseUrl',
+  'queryPermission',
+  'require',
+  'sha256',
+  'toBase64',
+];
+
+test('maps every documented sandbox API', () => {
+  assert.deepEqual(Object.keys(API_PERMISSIONS).sort(), Object.keys(DOCUMENTED_PERMISSION_APIS).sort());
+
+  for (const [api, permission] of Object.entries(DOCUMENTED_PERMISSION_APIS)) {
+    assert.equal(API_PERMISSIONS[api], permission, api);
+  }
+
+  for (const api of DOCUMENTED_NO_PERMISSION_APIS) {
+    assert.ok(APIS_WITHOUT_PERMISSION.has(api), `missing no-permission API ${api}`);
+    assert.equal(API_PERMISSIONS[api], undefined, `${api} should not require a permission`);
+  }
+});
+
+test('requires read_analytics_storage for readAnalyticsStorage', () => {
+  const result = validateTemplate(buildTemplate({
+    code: "const readAnalyticsStorage = require('readAnalyticsStorage'); readAnalyticsStorage();",
+    permissions: [],
+  }));
+
+  assert.match(errorText(result), /Permission "read_analytics_storage" is used but not requested/);
+});
+
+test('accepts readAnalyticsStorage when read_analytics_storage is declared', () => {
+  const result = validateTemplate(buildTemplate({
+    code: "const readAnalyticsStorage = require('readAnalyticsStorage'); readAnalyticsStorage();",
+    permissions: [encodePermission('read_analytics_storage', {})],
+  }));
+
+  assert.equal(result.errors.length, 0, errorText(result));
+});
+
+test('warns about an unknown require', () => {
+  const result = validateTemplate(buildTemplate({
+    code: "const future = require('futureApi');",
+    permissions: [],
+  }));
+
+  assert.equal(result.errors.length, 0, errorText(result));
+  assert.match(
+    result.warnings.map((warning) => warning.message).join('\n'),
+    /Unknown API "futureApi" in require/,
+  );
+});
+
+test('does not warn for documented no-permission APIs', () => {
+  const result = validateTemplate(buildTemplate({
+    code: [
+      "require('sha256');",
+      "require('makeInteger');",
+      "require('queryPermission');",
+      "require('parseUrl');",
+    ].join('\n'),
+    permissions: [],
+  }));
+
+  assert.equal(result.errors.length, 0, errorText(result));
+  assert.ok(!result.warnings.some((warning) => warning.message.includes('Unknown API')));
 });

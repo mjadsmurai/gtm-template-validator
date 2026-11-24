@@ -35,6 +35,7 @@ export const API_PERMISSIONS = {
   getReferrerQueryParameters: 'get_referrer',
   getReferrerUrl: 'get_referrer',
   getUrl: 'get_url',
+  readAnalyticsStorage: 'read_analytics_storage',
   readCharacterSet: 'read_character_set',
   readTitle: 'read_title',
 
@@ -48,6 +49,41 @@ export const API_PERMISSIONS = {
   templateStorage: 'access_template_storage',
   logToConsole: 'logging',
 };
+
+/**
+ * Documented sandbox APIs that do not require any web permission. Listing them
+ * lets the validator distinguish a valid no-permission API from a typo or an
+ * API that is newer than this map.
+ */
+export const APIS_WITHOUT_PERMISSION = new Set([
+  'callLater',
+  'decodeUri',
+  'decodeUriComponent',
+  'encodeUri',
+  'encodeUriComponent',
+  'fromBase64',
+  'generateRandom',
+  'getTimestamp',
+  'getTimestampMillis',
+  'getType',
+  'JSON',
+  'makeInteger',
+  'makeNumber',
+  'makeString',
+  'makeTableMap',
+  'Math',
+  'Object',
+  'parseUrl',
+  'queryPermission',
+  'require',
+  'sha256',
+  'toBase64',
+]);
+
+export const KNOWN_APIS = new Set([
+  ...Object.keys(API_PERMISSIONS),
+  ...APIS_WITHOUT_PERMISSION,
+]);
 
 export const PERMISSION_LABELS = {
   access_globals: 'Global variables',
@@ -66,6 +102,7 @@ export const PERMISSION_LABELS = {
   write_data_layer: 'Data layer writes',
   access_consent: 'Consent state',
   read_container_data: 'Container metadata',
+  read_analytics_storage: 'Analytics storage',
   read_character_set: 'Character set',
   read_event_metadata: 'Event metadata',
 };

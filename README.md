@@ -20,6 +20,7 @@ You can use it at: https://mjadsmurai.github.io/gtm-template-validator/
 - `___INFO___` required fields.
 - `___TEMPLATE_PARAMETERS___` JSON shape.
 - Permission **types** required by `require(...)` calls.
+- The full documented GTM sandbox API list (both permission-bearing and no-permission APIs), so unknown `require()` names are reported as warnings.
 - Permission **resources** used by the sandbox code:
   - `access_globals` keys and their `read` / `write` / `execute` flags.
   - `get_cookies` and `set_cookies` cookie names.

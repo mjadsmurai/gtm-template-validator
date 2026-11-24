@@ -1,4 +1,4 @@
-import { API_PERMISSIONS } from './permissions-schema.js';
+import { API_PERMISSIONS, KNOWN_APIS } from './permissions-schema.js';
 
 const MAX_VALUES = 50;
 
@@ -553,17 +553,25 @@ export function analyzeCode(code, baseLine = 1) {
   collectParamValues(source, scopes, constants);
 
   const requirements = [];
+  const warnings = [];
+  const unknownRequires = new Set();
 
   // Presence requirements come from require() as well as from actual calls.
   const requires = [...source.matchAll(/require\(\s*["']([^"']+)["']\s*\)/g)];
   for (const match of requires) {
     const api = match[1];
-    addPresence(
-      requirements,
-      API_PERMISSIONS[api],
-      `require:${api}`,
-      baseLine + lineAt(match.index) - 1,
-    );
+    const line = baseLine + lineAt(match.index) - 1;
+
+    if (!KNOWN_APIS.has(api) && !unknownRequires.has(api)) {
+      unknownRequires.add(api);
+      warnings.push({
+        message: `Unknown API "${api}" in require(); not present in the validator API map`,
+        line,
+        api,
+      });
+    }
+
+    addPresence(requirements, API_PERMISSIONS[api], `require:${api}`, line);
   }
 
   const apiNames = Object.keys(API_PERMISSIONS).concat('localStorage');
@@ -684,6 +692,7 @@ export function analyzeCode(code, baseLine = 1) {
 
   return {
     requirements: dedupeRequirements(requirements),
+    warnings,
     constants,
     scopes,
   };
