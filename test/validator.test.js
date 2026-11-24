@@ -17,7 +17,7 @@ const INFO = {
   containerContexts: ['WEB'],
 };
 
-function buildTemplate({ code = 'data.gtmOnSuccess();', permissions = [], permissionsText } = {}) {
+function buildTemplate({ code = 'data.gtmOnSuccess();', permissions = [], permissionsText, testsText } = {}) {
   return [
     '___TERMS_OF_SERVICE___',
     'terms',
@@ -30,7 +30,7 @@ function buildTemplate({ code = 'data.gtmOnSuccess();', permissions = [], permis
     '___WEB_PERMISSIONS___',
     permissionsText === undefined ? JSON.stringify(permissions) : permissionsText,
     '___TESTS___',
-    'scenarios: []',
+    testsText === undefined ? 'scenarios: []' : testsText,
     '___NOTES___',
     'notes',
     '',
@@ -340,4 +340,41 @@ test('does not warn for documented no-permission APIs', () => {
 
   assert.equal(result.errors.length, 0, errorText(result));
   assert.ok(!result.warnings.some((warning) => warning.message.includes('Unknown API')));
+});
+
+test('reports invalid YAML in the tests block', () => {
+  const result = validateTemplate(buildTemplate({
+    testsText: [
+      'scenarios:',
+      '- name: Broken',
+      '  code: "unterminated',
+    ].join('\n'),
+  }));
+
+  assert.match(errorText(result), /Invalid YAML/);
+});
+
+test('reports test scenarios without a name or code', () => {
+  const result = validateTemplate(buildTemplate({
+    testsText: [
+      'scenarios:',
+      '- name: Missing code',
+      '- code: "data.gtmOnSuccess();"',
+    ].join('\n'),
+  }));
+
+  assert.match(errorText(result), /scenarios\[0\]\.code must be a non-empty string/);
+  assert.match(errorText(result), /scenarios\[1\]\.name must be a non-empty string/);
+});
+
+test('accepts a valid tests block', () => {
+  const result = validateTemplate(buildTemplate({
+    testsText: [
+      'scenarios:',
+      '- name: Works',
+      '  code: "data.gtmOnSuccess();"',
+    ].join('\n'),
+  }));
+
+  assert.equal(result.errors.length, 0, errorText(result));
 });

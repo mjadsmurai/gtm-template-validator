@@ -1,6 +1,7 @@
 import { decodePermissions } from './gtm-value.js';
 import { analyzeCode } from './static-analysis.js';
 import { PERMISSION_LABELS } from './permissions-schema.js';
+import { load as loadYaml } from './vendor/js-yaml.js';
 
 export const BLOCKS = {
   TERMS: '___TERMS_OF_SERVICE___',
@@ -68,9 +69,10 @@ export function extractBlocks(template) {
   return { blocks, errors };
 }
 
-export function validateTemplate(template) {
+export function validateTemplate(template, options = {}) {
   const errors = [];
   const warnings = [];
+  const yaml = resolveYamlParser(options);
   const { blocks, errors: blockErrors } = extractBlocks(template);
   errors.push(...blockErrors);
 
@@ -80,6 +82,10 @@ export function validateTemplate(template) {
 
   if (blocks[BLOCKS.PARAMETERS]) {
     errors.push(...validateParameters(blocks[BLOCKS.PARAMETERS]));
+  }
+
+  if (blocks[BLOCKS.TESTS]) {
+    errors.push(...validateTests(blocks[BLOCKS.TESTS], yaml));
   }
 
   let requirements = [];
@@ -219,6 +225,54 @@ function validateParameters(block) {
   }
 
   return [];
+}
+
+function resolveYamlParser(options) {
+  if (options && options.yaml) return options.yaml;
+  return { load: loadYaml };
+}
+
+function parseYaml(parser, text) {
+  if (typeof parser === 'function') return parser(text);
+  if (typeof parser.parse === 'function') return parser.parse(text);
+  if (typeof parser.load === 'function') return parser.load(text);
+  throw new Error('YAML parser must expose parse() or load()');
+}
+
+function validateTests(block, yaml) {
+  if (!yaml) return [];
+
+  let parsed;
+  try {
+    parsed = parseYaml(yaml, block.content);
+  } catch (error) {
+    return [issue(BLOCKS.TESTS, `Invalid YAML: ${error.message}`, block.startLine)];
+  }
+
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    return [issue(BLOCKS.TESTS, 'Tests must be a YAML object', block.startLine)];
+  }
+
+  if (!Array.isArray(parsed.scenarios)) {
+    return [issue(BLOCKS.TESTS, 'Tests must contain a scenarios list', block.startLine)];
+  }
+
+  const errors = [];
+  parsed.scenarios.forEach((scenario, index) => {
+    const position = `scenarios[${index}]`;
+    if (!scenario || typeof scenario !== 'object' || Array.isArray(scenario)) {
+      errors.push(issue(BLOCKS.TESTS, `${position} must be an object`, block.startLine));
+      return;
+    }
+    if (typeof scenario.name !== 'string' || scenario.name.trim() === '') {
+      errors.push(issue(BLOCKS.TESTS, `${position}.name must be a non-empty string`, block.startLine));
+    }
+    if (typeof scenario.code !== 'string' || scenario.code.trim() === '') {
+      errors.push(issue(BLOCKS.TESTS, `${position}.code must be a non-empty string`, block.startLine));
+    }
+  });
+
+  return errors;
 }
 
 function groupById(permissions) {

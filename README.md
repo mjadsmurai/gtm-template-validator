@@ -19,6 +19,7 @@ You can use it at: https://mjadsmurai.github.io/gtm-template-validator/
 - Block structure and JSON syntax.
 - `___INFO___` required fields.
 - `___TEMPLATE_PARAMETERS___` JSON shape.
+- `___TESTS___` YAML syntax and `scenarios[].name` / `scenarios[].code` shape.
 - Permission **types** required by `require(...)` calls.
 - The full documented GTM sandbox API list (both permission-bearing and no-permission APIs), so unknown `require()` names are reported as warnings.
 - Permission **resources** used by the sandbox code:
@@ -34,7 +35,7 @@ The static analyser resolves literals, `const` constants (including function-sco
 
 ## Development
 
-There are no runtime dependencies. Tests use the Node.js built-in test runner:
+Tests use the Node.js built-in test runner. The YAML parser is vendored at `src/vendor/js-yaml.mjs` (MIT license included), so there is no runtime CDN dependency and no install step is required:
 
 ```bash
 npm test
@@ -48,6 +49,8 @@ src/gtm-value.js            GTM permission value codec
 src/permissions-schema.js   sandbox API -> permission map
 src/static-analysis.js      code scanning and constant resolution
 src/validator.js            validation orchestration
+src/vendor/js-yaml.js      vendored YAML parser (MIT)
+src/vendor/js-yaml.LICENSE  parser license
 test/validator.test.js      test suite
 test/fixtures/official.tpl  reference template
 ```

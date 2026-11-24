@@ -52,9 +52,9 @@
             </div>
           </div>
         </div>
-        <script src="https://cdn.jsdelivr.net/npm/yamljs@0.3.0/dist/yaml.min.js"></script>
         <script type="module">
           import { validateTemplate } from './src/validator.js';
+          import { load as loadYaml } from './src/vendor/js-yaml.js';
 
           const CODE_STORAGE_KEY = 'code';
 
@@ -138,7 +138,7 @@
             let obj;
 
             try {
-              obj = YAML.parse(str);
+              obj = loadYaml(str);
             } catch (error) {
               errors.push(`${error.message}. Check it on https://www.yamllint.com/`);
               return { errors };
